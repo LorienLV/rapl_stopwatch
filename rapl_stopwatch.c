@@ -377,7 +377,8 @@ void rapl_stopwatch_pause(rapl_stopwatch_t *const rapl_sw) {
     pthread_rwlock_unlock(&global_state_lock);
 }
 
-int rapl_stopwatch_get_mj(rapl_stopwatch_t *const rapl_sw, const rapl_domain_t domain,
+int rapl_stopwatch_get_mj(const rapl_stopwatch_t *const rapl_sw,
+                          const rapl_domain_t domain,
                           uint64_t *const total_mj_domain) {
 
     *total_mj_domain = 0;
