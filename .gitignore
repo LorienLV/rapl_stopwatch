@@ -1,0 +1,22 @@
+# Ignore every file in bin.
+bin/
+
+# Ignore every file in obj.
+obj/
+
+# Ignore every file in build.
+build/
+
+# Ignore Google Drive files.
+*.gddoc
+*.gdoc
+*.gdsheet
+*.drawio
+
+# Explicitly ignore every object file or dependency file.
+*.d
+*.o
+
+# VScode ignores
+
+.vscode
