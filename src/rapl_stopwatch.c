@@ -1,13 +1,14 @@
 #include "rapl_stopwatch.h"
 
-#include <time.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <semaphore.h>
-#include <pthread.h>
 #include <assert.h>
+#include <inttypes.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #define MAX_CPUS 1024
 #define MAX_PACKAGES 16
@@ -139,7 +140,8 @@ static int get_updated_counters(const int package, const int domain,
     }
 
     int err = read_from_file(&package_domain_energy_files[files_idx(package, domain, 0)],
-                             "%lld", uj_now);
+                             "%" PRId64, uj_now);
+
     if (err) {
         return err;
     }
