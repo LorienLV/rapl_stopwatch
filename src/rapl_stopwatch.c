@@ -153,12 +153,13 @@ static int get_updated_counters(const int package, const int domain,
         increment = *uj_now - last_read_uj[counters_idx(package, domain)];
     }
     else { // Overflow.
-        increment = max_uj[counters_idx(package, domain)] - *uj_now +
-                    last_read_uj[counters_idx(package, domain)];
+        increment = max_uj[counters_idx(package, domain)] -
+                    last_read_uj[counters_idx(package, domain)] +
+                    *uj_now;
     }
 
     *updated_extended_counter_mj =
-        (extended_counter_mj[counters_idx(package, domain)] + increment) / 1E3;
+        extended_counter_mj[counters_idx(package, domain)] + increment / 1E3;
 
     return 0;
 }
