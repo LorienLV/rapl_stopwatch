@@ -184,9 +184,12 @@ static void *updater_loop(void *vargp) {
 
         for (int package = 0; package < num_packages; ++package) {
             for (int domain = 0; domain < NUM_RAPL_DOMAINS; ++domain) {
-                get_updated_counters(package, domain,
-                                     &last_read_uj[counters_idx(package, domain)],
-                                     &extended_counter_mj[counters_idx(package, domain)]);
+                uint64_t uj_now;
+                uint64_t updated_extended_counter_mj;
+                get_updated_counters(package, domain, &uj_now, &updated_extended_counter_mj);
+
+                last_read_uj[counters_idx(package, domain)] = uj_now;
+                extended_counter_mj[counters_idx(package, domain)] = updated_extended_counter_mj;
             }
         }
 
