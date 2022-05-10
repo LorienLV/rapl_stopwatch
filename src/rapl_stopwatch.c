@@ -47,7 +47,7 @@ static sem_t updater_thread_sem; // Used to release the thread.
 
 // Clean way to access the counters and the files.
 #define counters_idx(i,j) ((i) * NUM_RAPL_DOMAINS + (j))
-#define files_idx(i,j,k) ((i) * NUM_RAPL_DOMAINS + (j) * FILE_NAME_SIZE + (k))
+#define files_idx(i,j,k) ((i) * NUM_RAPL_DOMAINS * FILE_NAME_SIZE + (j) * FILE_NAME_SIZE + (k))
 
 /**
  * Get the RAPL_DOMAIN enum corresponding to a given rapl domain name (string).
