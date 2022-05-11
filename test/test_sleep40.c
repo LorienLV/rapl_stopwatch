@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 int main(int argc, char const *argv[]) {
-    int err = rapl_energy_api_init();
+    int err = rapl_stopwatch_api_init();
     if (err) {
         fprintf(stderr, "Error initializing the API\n");
         return 1;
@@ -28,7 +28,7 @@ int main(int argc, char const *argv[]) {
     printf("mJ: %" PRIu64 "\n", count);
 
     rapl_stopwatch_destroy(&rapl_sw);
-    rapl_energy_api_destroy();
+    rapl_stopwatch_api_destroy();
 
     return 0;
 }
