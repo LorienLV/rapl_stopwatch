@@ -208,6 +208,9 @@ static void *updater_loop(void *vargp) {
  *
  */
 static void detect_packages(void) {
+    num_packages = 0;
+    num_cores = 0;
+
     bool package_counted[MAX_PACKAGES];
     for (int package = 0; package < MAX_PACKAGES; ++package) {
         package_counted[package] = false;
@@ -231,7 +234,7 @@ static void detect_packages(void) {
     }
 }
 
-int rapl_energy_api_init(void) {
+int rapl_stopwatch_api_init(void) {
     // Set num_packages and num_cores.
     detect_packages();
 
@@ -349,7 +352,7 @@ int rapl_energy_api_init(void) {
     return 0;
 }
 
-void rapl_energy_api_destroy(void) {
+void rapl_stopwatch_api_destroy(void) {
     // Tell the updater thread that it can exit its loop.
     sem_post(&updater_thread_sem);
     // Wait until the updater thread exits.

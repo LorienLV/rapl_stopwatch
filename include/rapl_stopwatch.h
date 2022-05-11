@@ -40,14 +40,14 @@ typedef struct rapl_stopwatch_s {
  *
  * @return 0 on success or a number different from 0 otherwise.
  */
-int rapl_energy_api_init(void);
+int rapl_stopwatch_api_init(void);
 
 /**
- * Destroy the RAPL energy API. Clean all dynamic memory allocated when initializing
+ * Destroy the RAPL-stopwatch API. Clean all dynamic memory allocated when initializing
  * the API.
  *
  */
-void rapl_energy_api_destroy(void);
+void rapl_stopwatch_api_destroy(void);
 
 /**
  * Initialize the given rapl_stopwatch.
