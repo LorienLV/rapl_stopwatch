@@ -51,7 +51,7 @@ Basic example:
 
 ```c
 // Prepare the library to start measuring energy using RAPL sysfs files.
-int err = rapl_energy_api_init();
+int err = rapl_stopwatch_api_init();
 if (err) {
     fprintf(stderr, "Error initializing the API\n");
     return 1;
@@ -82,5 +82,5 @@ printf("mJ: %" PRIu64 "\n", count);
 // Destroy the rapl_stopwatch.
 rapl_stopwatch_destroy(&rapl_sw);
 // Destroy the RAPL API.
-rapl_energy_api_destroy();
+rapl_stopwatch_api_destroy();
 ```
