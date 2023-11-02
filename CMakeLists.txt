@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(rapl_stopwatch VERSION 1.0.0 LANGUAGES C)
+project(rapl_stopwatch VERSION 1.0.0 LANGUAGES C CXX)
 
 option(BUILD_TESTS "Build unit tests" OFF)
 
@@ -26,7 +26,7 @@ if (BUILD_SHARED_LIBS)
     )
 endif()
 
-# Link agains pthread
+# Link against pthread
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
