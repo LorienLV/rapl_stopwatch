@@ -43,21 +43,22 @@ static pthread_rwlock_t global_state_lock;
 #define UPDATER_WAIT_SEC 30
 
 static pthread_t updater_thread;
-static sem_t updater_thread_sem; // Used to release the thread.
+static sem_t updater_thread_sem;   // Used to release the thread.
 
 // Clean way to access the counters and the files.
-#define counters_idx(i,j) ((i) * NUM_RAPL_DOMAINS + (j))
-#define files_idx(i,j,k) ((i) * NUM_RAPL_DOMAINS * FILE_NAME_SIZE + (j) * FILE_NAME_SIZE + (k))
+#define counters_idx(i, j) ((i)*NUM_RAPL_DOMAINS + (j))
+#define files_idx(i, j, k) \
+    ((i)*NUM_RAPL_DOMAINS * FILE_NAME_SIZE + (j)*FILE_NAME_SIZE + (k))
 
 /**
  * Get the RAPL_DOMAIN enum corresponding to a given rapl domain name (string).
  *
  * @param domain_name The domain name (string).
  * @param rapl_domain The corresponding RAPL_DOMAIN enum.
- * @return 0 on success, a number different from 0 otherwise.
+ * @return rapl_error_t
  */
-static int domain_string_to_rapl_domain(const char *const domain_name,
-                                        rapl_domain_t *const rapl_domain) {
+static rapl_error_t domain_string_to_rapl_domain(const char *const domain_name,
+                                                 rapl_domain_t *const rapl_domain) {
 
     if (strcmp(domain_name, "core") == 0) {
         *rapl_domain = RAPL_CORE;
@@ -78,10 +79,10 @@ static int domain_string_to_rapl_domain(const char *const domain_name,
     //     *rapl_domain = RAPL_NODE;
     // }
     else {
-        return 1;
+        return UNABLE_TO_ACCESS_DOMAIN;
     }
 
-    return 0;
+    return SUCCESS;
 }
 
 /**
@@ -91,20 +92,21 @@ static int domain_string_to_rapl_domain(const char *const domain_name,
  * @param format The format of the value to read. This format should follow the
  * scanf's.
  * @param value On return, this variable will contain the value read.
- * @return 0 on success, a number different from 0 otherwise.
+ * @return rapl_error_t.
  */
-static int read_from_file(const char *const file_name, const char *const format,
-                          void *const value) {
+static rapl_error_t read_from_file(const char *const file_name,
+                                   const char *const format,
+                                   void *const value) {
 
     FILE *file = fopen(file_name, "r");
     if (file == NULL) {
-        return 1;
+        return UNABLE_TO_ACCESS_DOMAIN;
     }
 
     fscanf(file, format, value);
     fclose(file);
 
-    return 0;
+    return SUCCESS;
 }
 
 /**
@@ -120,29 +122,32 @@ static bool valid_domain(const int package, const int domain) {
 }
 
 /**
- * Get the uJ counter of a the given package and domain by reading the corresponding
- * RAPL file. Also, set the variable UPDATED_EXTENDED_COUNTER_MJ using the read value
- * and the last value of EXTENDED_COUNTER_MJ.
+ * Get the uJ counter of a the given package and domain by reading the
+ * corresponding RAPL file. Also, set the variable UPDATED_EXTENDED_COUNTER_MJ
+ * using the read value and the last value of EXTENDED_COUNTER_MJ.
  *
  * @param package The package index.
  * @param domain The domain index.
  * @param uj_now The value read from the corresponding RAPL file.
  * @param updated_extended_counter_mj The updated value of EXTENDED_COUNTER_MJ.
- * @return 0 on success, a number different from 0 otherwise.
+ * @return rapl_error_t.
  */
-static int get_updated_counters(const int package, const int domain,
-                                uint64_t *const uj_now,
-                                uint64_t *const updated_extended_counter_mj) {
+static rapl_error_t get_updated_counters(const int package,
+                                         const int domain,
+                                         uint64_t *const uj_now,
+                                         uint64_t *const updated_extended_counter_mj) {
 
     // uJ now.
     if (!valid_domain(package, domain)) {
-        return 1;
+        return UNABLE_TO_ACCESS_DOMAIN;
     }
 
-    int err = read_from_file(&package_domain_energy_files[files_idx(package, domain, 0)],
-                             "%" PRId64, uj_now);
+    rapl_error_t
+        err = read_from_file(&package_domain_energy_files[files_idx(package, domain, 0)],
+                             "%" PRId64,
+                             uj_now);
 
-    if (err) {
+    if (err != SUCCESS) {
         return err;
     }
 
@@ -152,23 +157,22 @@ static int get_updated_counters(const int package, const int domain,
     if (*uj_now >= last_read_uj[counters_idx(package, domain)]) {
         increment = *uj_now - last_read_uj[counters_idx(package, domain)];
     }
-    else { // Overflow.
+    else {   // Overflow.
         increment = max_uj[counters_idx(package, domain)] -
-                    last_read_uj[counters_idx(package, domain)] +
-                    *uj_now;
+                    last_read_uj[counters_idx(package, domain)] + *uj_now;
     }
 
-    *updated_extended_counter_mj =
-        extended_counter_mj[counters_idx(package, domain)] + increment / 1E3;
+    *updated_extended_counter_mj = extended_counter_mj[counters_idx(package, domain)] +
+                                   increment / 1E3;
 
-    return 0;
+    return SUCCESS;
 }
 
 /**
- * The thread running this function will periodically (every UPDATER_WAIT_SEC seconds)
- * update EXTENDED_COUNTER_MJ and LAST_READ_UJ arrays. This function is used to
- * detect and correc overflows in the RAPL files.
- * 
+ * The thread running this function will periodically (every UPDATER_WAIT_SEC
+ * seconds) update EXTENDED_COUNTER_MJ and LAST_READ_UJ arrays. This function is
+ * used to detect and correc overflows in the RAPL files.
+ *
  * @param vargp Not used.
  * @return NULL.
  */
@@ -186,7 +190,15 @@ static void *updater_loop(void *vargp) {
             for (int domain = 0; domain < NUM_RAPL_DOMAINS; ++domain) {
                 uint64_t uj_now;
                 uint64_t updated_extended_counter_mj;
-                get_updated_counters(package, domain, &uj_now, &updated_extended_counter_mj);
+                rapl_error_t err = get_updated_counters(package,
+                                                        domain,
+                                                        &uj_now,
+                                                        &updated_extended_counter_mj);
+
+                if (err != SUCCESS) {
+                    uj_now = 0;
+                    updated_extended_counter_mj = 0;
+                }
 
                 last_read_uj[counters_idx(package, domain)] = uj_now;
                 extended_counter_mj[counters_idx(package, domain)] = updated_extended_counter_mj;
@@ -203,8 +215,8 @@ static void *updater_loop(void *vargp) {
 }
 
 /**
- * Detect the number of packages and cores in the system. Update the num_packages
- * and num_cores global variables.
+ * Detect the number of packages and cores in the system. Update the
+ * num_packages and num_cores global variables.
  *
  */
 static void detect_packages(void) {
@@ -218,7 +230,9 @@ static void detect_packages(void) {
 
     for (int cpu = 0; cpu < MAX_CPUS; ++cpu) {
         char cpu_filename[FILE_NAME_SIZE];
-        sprintf(cpu_filename, "/sys/devices/system/cpu/cpu%d/topology/physical_package_id", cpu);
+        sprintf(cpu_filename,
+                "/sys/devices/system/cpu/cpu%d/topology/physical_package_id",
+                cpu);
 
         int package;
         int err = read_from_file(cpu_filename, "%d", &package);
@@ -234,21 +248,24 @@ static void detect_packages(void) {
     }
 }
 
-int rapl_stopwatch_api_init(void) {
+rapl_error_t rapl_stopwatch_api_init(void) {
     // Set num_packages and num_cores.
     detect_packages();
 
     if (num_packages == 0) {
         fprintf(stderr, "Could not detect the number of packages\n");
-        return 1;
+        return CONFIG_ERROR;
     }
 
-    last_read_uj = (uint64_t *)malloc(num_packages * NUM_RAPL_DOMAINS * sizeof(*last_read_uj));
-    extended_counter_mj = (uint64_t *) malloc(num_packages * NUM_RAPL_DOMAINS * sizeof(*extended_counter_mj));
+    last_read_uj = (uint64_t *)malloc(num_packages * NUM_RAPL_DOMAINS *
+                                      sizeof(*last_read_uj));
+    extended_counter_mj = (uint64_t *)malloc(num_packages * NUM_RAPL_DOMAINS *
+                                             sizeof(*extended_counter_mj));
     max_uj = (uint64_t *)malloc(num_packages * NUM_RAPL_DOMAINS * sizeof(*max_uj));
 
-    package_domain_energy_files = (char *)malloc(num_packages * NUM_RAPL_DOMAINS *
-                                  FILE_NAME_SIZE * sizeof(*package_domain_energy_files));
+    package_domain_energy_files = (char *)
+        malloc(num_packages * NUM_RAPL_DOMAINS * FILE_NAME_SIZE *
+               sizeof(*package_domain_energy_files));
 
     for (int package = 0; package < num_packages; ++package) {
         // Set the energy file name of each RAPL domain of this package to NULL.
@@ -267,25 +284,30 @@ int rapl_stopwatch_api_init(void) {
 
         char range_file_name[FILE_NAME_SIZE];
         sprintf(range_file_name, "%s/max_energy_range_uj", package_root);
-        int err = read_from_file(range_file_name, "%lld", &max_uj[counters_idx(package, RAPL_PACKAGE)]);
+        int err = read_from_file(range_file_name,
+                                 "%lld",
+                                 &max_uj[counters_idx(package, RAPL_PACKAGE)]);
         if (err) {
             fprintf(stderr, "Could not read %s\n", range_file_name);
             fprintf(stderr, "Failed to initialize the RAPL energy API.\n");
-            return 2;
+            return CONFIG_ERROR;
         }
 
         // Initial uJ read.
         sprintf(&package_domain_energy_files[files_idx(package, RAPL_PACKAGE, 0)],
-                "%s/energy_uj", package_root);
+                "%s/energy_uj",
+                package_root);
 
         uint64_t uj_now;
         err = read_from_file(&package_domain_energy_files[files_idx(package, RAPL_PACKAGE, 0)],
-                             "%lld", &uj_now);
+                             "%lld",
+                             &uj_now);
         if (err) {
-            fprintf(stderr, "Could not read %s\n",
+            fprintf(stderr,
+                    "Could not read %s\n",
                     &package_domain_energy_files[files_idx(package, RAPL_PACKAGE, 0)]);
             fprintf(stderr, "Failed to initialize the RAPL energy API.\n");
-            return 2;
+            return CONFIG_ERROR;
         }
         last_read_uj[counters_idx(package, RAPL_PACKAGE)] = uj_now;
         extended_counter_mj[counters_idx(package, RAPL_PACKAGE)] = 0;
@@ -293,17 +315,24 @@ int rapl_stopwatch_api_init(void) {
         /*
          * Iterate over the package subdomains (DRAM, CORE and UNCORE).
          */
-        assert(NUM_RAPL_DOMAINS == 5); // Something has changed in the RAPL api.
-        for (int domain_idx = 0; domain_idx < 3; ++domain_idx) {
+        assert(NUM_RAPL_DOMAINS == 5);   // Something has changed in the RAPL
+                                         // api.
+        const int num_subdomains = 3;
+        for (int domain_idx = 0; domain_idx < num_subdomains; ++domain_idx) {
 
             // The subdomain name
 
             char name_file_name[FILE_NAME_SIZE];
-            sprintf(name_file_name, "%s" RAPL_SUBDOMAIN_PATH "/name", package_root, package, domain_idx);
+            sprintf(name_file_name,
+                    "%s" RAPL_SUBDOMAIN_PATH "/name",
+                    package_root,
+                    package,
+                    domain_idx);
 
             char domain_name[DOMAIN_NAME_SIZE];
-            int err = read_from_file(name_file_name, "%s", &domain_name);
-            if (err) {
+            rapl_error_t err = read_from_file(name_file_name, "%s", &domain_name);
+            // Cannot access subdomain.
+            if (err != SUCCESS) {
                 continue;
             }
 
@@ -311,16 +340,22 @@ int rapl_stopwatch_api_init(void) {
             err = domain_string_to_rapl_domain(domain_name, &domain);
             if (err) {
                 fprintf(stderr, "Failed to initialize the RAPL energy API.\n");
-                return 1;
+                return CONFIG_ERROR;
             }
 
             // Max value of the energy counter.
 
             char range_file_name[FILE_NAME_SIZE];
-            sprintf(range_file_name, "%s" RAPL_SUBDOMAIN_PATH "/max_energy_range_uj",
-                    package_root, package, domain_idx);
-            err = read_from_file(range_file_name, "%lld", &max_uj[counters_idx(package, domain)]);
-            if (err) {
+            sprintf(range_file_name,
+                    "%s" RAPL_SUBDOMAIN_PATH "/max_energy_range_uj",
+                    package_root,
+                    package,
+                    domain_idx);
+            err = read_from_file(range_file_name,
+                                 "%lld",
+                                 &max_uj[counters_idx(package, domain)]);
+            // Cannot access subdomain.
+            if (err != SUCCESS) {
                 continue;
             }
 
@@ -328,12 +363,16 @@ int rapl_stopwatch_api_init(void) {
 
             sprintf(&package_domain_energy_files[files_idx(package, domain, 0)],
                     "%s" RAPL_SUBDOMAIN_PATH "/energy_uj",
-                    package_root, package, domain_idx);
+                    package_root,
+                    package,
+                    domain_idx);
 
             uint64_t uj_now;
             err = read_from_file(&package_domain_energy_files[files_idx(package, domain, 0)],
-                                 "%lld", &uj_now);
-            if (err) {
+                                 "%lld",
+                                 &uj_now);
+            // Cannot access subdomain.
+            if (err != SUCCESS) {
                 package_domain_energy_files[files_idx(package, domain, 0)] = '\0';
                 continue;
             }
@@ -349,7 +388,7 @@ int rapl_stopwatch_api_init(void) {
     // Create the updater thread.
     pthread_create(&updater_thread, NULL, updater_loop, NULL);
 
-    return 0;
+    return SUCCESS;
 }
 
 void rapl_stopwatch_api_destroy(void) {
@@ -370,9 +409,9 @@ void rapl_stopwatch_api_destroy(void) {
 
 void rapl_stopwatch_init(rapl_stopwatch_t *const rapl_sw) {
     rapl_sw->last_read_mj = (uint64_t *)malloc(num_packages * NUM_RAPL_DOMAINS *
-                            sizeof(*rapl_sw->last_read_mj));
+                                               sizeof(*rapl_sw->last_read_mj));
     rapl_sw->total_count_mj = (uint64_t *)malloc(num_packages * NUM_RAPL_DOMAINS *
-                              sizeof(*rapl_sw->total_count_mj));
+                                                 sizeof(*rapl_sw->total_count_mj));
 
     rapl_stopwatch_reset(rapl_sw);
 }
@@ -396,12 +435,14 @@ void rapl_stopwatch_play(rapl_stopwatch_t *const rapl_sw) {
     for (int package = 0; package < num_packages; ++package) {
         for (int domain = 0; domain < NUM_RAPL_DOMAINS; ++domain) {
             uint64_t uj_now;
-            int err = get_updated_counters(package, domain, &uj_now,
+            int err = get_updated_counters(package,
+                                           domain,
+                                           &uj_now,
                                            &rapl_sw->last_read_mj[counters_idx(package, domain)]);
 
-            if (err) {
-                // I assume the error is because we can not read the file because
-                // we do not have permission/it does not exist.
+            if (err != SUCCESS) {
+                // I assume the error is because we can not read the file
+                // because we do not have permission/it does not exist.
                 continue;
             }
         }
@@ -417,26 +458,29 @@ void rapl_stopwatch_pause(rapl_stopwatch_t *const rapl_sw) {
         for (int domain = 0; domain < NUM_RAPL_DOMAINS; ++domain) {
             uint64_t uj_now;
             uint64_t extended_counter_mj_now;
-            int err = get_updated_counters(package, domain,
-                                           &uj_now, &extended_counter_mj_now);
+            int err = get_updated_counters(package,
+                                           domain,
+                                           &uj_now,
+                                           &extended_counter_mj_now);
 
-            if (err) {
-                // I assume the error is because we can not read the file because
-                // we do not have permission/it does not exist.
+            if (err != SUCCESS) {
+                // I assume the error is because we can not read the file
+                // because we do not have permission/it does not exist.
                 continue;
             }
 
             rapl_sw->total_count_mj[counters_idx(package, domain)] +=
-                extended_counter_mj_now - rapl_sw->last_read_mj[counters_idx(package, domain)];
+                extended_counter_mj_now -
+                rapl_sw->last_read_mj[counters_idx(package, domain)];
         }
     }
 
     pthread_rwlock_unlock(&global_state_lock);
 }
 
-int rapl_stopwatch_get_mj(const rapl_stopwatch_t *const rapl_sw,
-                          const rapl_domain_t domain,
-                          uint64_t *const total_mj_domain) {
+rapl_error_t rapl_stopwatch_get_mj(const rapl_stopwatch_t *const rapl_sw,
+                                   const rapl_domain_t domain,
+                                   uint64_t *const total_mj_domain) {
 
     *total_mj_domain = 0;
 
@@ -449,20 +493,21 @@ int rapl_stopwatch_get_mj(const rapl_stopwatch_t *const rapl_sw,
         int err_dram = rapl_stopwatch_get_mj(rapl_sw, RAPL_DRAM, &mj_dram);
 
         if (err_package || err_dram) {
-            return 1;
+            return UNABLE_TO_ACCESS_DOMAIN;
         }
 
         *total_mj_domain = mj_package + mj_dram;
     }
     else {
-        // Summation of the energy consummed by the RAPL-domain among all packages.
+        // Summation of the energy consummed by the RAPL-domain among all
+        // packages.
         for (int package = 0; package < num_packages; ++package) {
             if (!valid_domain(package, domain)) {
-                return 1;
+                return UNABLE_TO_ACCESS_DOMAIN;
             }
             *total_mj_domain += rapl_sw->total_count_mj[counters_idx(package, domain)];
         }
     }
 
-    return 0;
+    return SUCCESS;
 }
